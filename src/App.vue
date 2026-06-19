@@ -11,6 +11,12 @@ const ENVIRONMENTS = [
   { value: 4, name: 'Entorno denso' }
 ]
 
+const FREQUENCIES = [
+  { name: '2.4 GHz', factor_f: 0 },
+  { name: '5 GHz', factor_f: 6 },
+  { name: '6 GHz', factor_f: 8 }
+]
+
 const MATERIALS = {
   vidrio: {
     key: 'vidrio',
@@ -22,6 +28,12 @@ const MATERIALS = {
     key: 'tabiqueria',
     name: 'Tabiquería / Yeso',
     alpha: 0.25,
+    pattern: 'drywall'
+  },
+  madera: {
+    key: 'madera',
+    name: 'Madera densa',
+    alpha: 0.35,
     pattern: 'drywall'
   },
   ladrillo: {
@@ -49,6 +61,9 @@ const chartScale = ref('dbm') // 'dbm' o 'mw'
 const P0_base = -40 // Potencia base a 1 metro o inicial
 const d0 = 1 // Distancia de referencia en metros
 
+// Parámetro Frecuencia Reactiva
+const selectedFreq = ref(FREQUENCIES[0])
+
 // Parámetros Modelo de Distancia
 const distance = ref(15) // slider 1 a 50
 const selectedEnvN = ref(2) // selector n
@@ -62,9 +77,9 @@ const selectedMaterialKey = ref('ladrillo')
 // ==========================================
 
 // Modelo 1: Pérdida por Distancia
-// Pr(d) = Pr(d0) - 10 * n * log10(d / d0)
+// Pr = P0_base - factor_f - (10 * n * log10(d / d0))
 const rxPowerDistance = computed(() => {
-  return P0_base - 10 * selectedEnvN.value * Math.log10(distance.value / d0)
+  return P0_base - selectedFreq.value.factor_f - 10 * selectedEnvN.value * Math.log10(distance.value / d0)
 })
 
 const rxPowerDistanceMw = computed(() => {
@@ -84,9 +99,10 @@ const currentMaterial = computed(() => MATERIALS[selectedMaterialKey.value])
 
 // P(x) = P0 * e^(-alpha * x)
 // Interpretado físicamente aplicando el decaimiento exponencial a la energía base
+// Pestaña Obstáculos: Pr = P0_base - factor_f - (10 * alpha * x)
 const rxPowerObstacles = computed(() => {
   const lossDb = 10 * currentMaterial.value.alpha * wallsCount.value
-  return P0_base - lossDb
+  return P0_base - selectedFreq.value.factor_f - lossDb
 })
 
 const rxPowerObstaclesMw = computed(() => {
@@ -188,7 +204,7 @@ const waveFronts = computed(() => {
     if (activeTab.value === 'distancia') {
       const distMeters = 1 + ((r - 90) / 390) * 49
       const validDist = Math.max(1, distMeters)
-      powerAtWave = P0_base - 10 * selectedEnvN.value * Math.log10(validDist / d0)
+      powerAtWave = P0_base - selectedFreq.value.factor_f - 10 * selectedEnvN.value * Math.log10(validDist / d0)
       
       if (60 + r > receiverX.value) {
         isPastDevice = true
@@ -203,7 +219,7 @@ const waveFronts = computed(() => {
         const wallX = 140 + (i + 0.5) * (340 / wallsCount.value)
         if (wallX < waveX) crossed++
       }
-      powerAtWave = P0_base - (10 * currentMaterial.value.alpha * crossed)
+      powerAtWave = P0_base - selectedFreq.value.factor_f - (10 * currentMaterial.value.alpha * crossed)
       
       if (waveX > receiverX.value) {
         isPastDevice = true
@@ -250,7 +266,7 @@ const chartPath = computed(() => {
   if (activeTab.value === 'distancia') {
     for (let i = 0; i <= 60; i++) {
       const d = 1 + (i / 60) * 49
-      const pDbm = P0_base - 10 * selectedEnvN.value * Math.log10(d / d0)
+      const pDbm = P0_base - selectedFreq.value.factor_f - 10 * selectedEnvN.value * Math.log10(d / d0)
       const x = mapX(d, 1, 50)
       const y = chartScale.value === 'dbm' ? mapY(pDbm) : mapY(Math.pow(10, pDbm / 10))
       points.push(`${x.toFixed(1)},${y.toFixed(1)}`)
@@ -258,7 +274,7 @@ const chartPath = computed(() => {
   } else {
     for (let i = 0; i <= 50; i++) {
       const n = (i / 50) * 5
-      const pDbm = P0_base - (10 * currentMaterial.value.alpha * n)
+      const pDbm = P0_base - selectedFreq.value.factor_f - (10 * currentMaterial.value.alpha * n)
       const x = mapX(n, 0, 5)
       const y = chartScale.value === 'dbm' ? mapY(pDbm) : mapY(Math.pow(10, pDbm / 10))
       points.push(`${x.toFixed(1)},${y.toFixed(1)}`)
@@ -292,11 +308,11 @@ const tangentLine = computed(() => {
   
   let p1Dbm, p2Dbm
   if (activeTab.value === 'distancia') {
-    p1Dbm = P0_base - 10 * selectedEnvN.value * Math.log10(val1 / d0)
-    p2Dbm = P0_base - 10 * selectedEnvN.value * Math.log10(val2 / d0)
+    p1Dbm = P0_base - selectedFreq.value.factor_f - 10 * selectedEnvN.value * Math.log10(val1 / d0)
+    p2Dbm = P0_base - selectedFreq.value.factor_f - 10 * selectedEnvN.value * Math.log10(val2 / d0)
   } else {
-    p1Dbm = P0_base - (10 * currentMaterial.value.alpha * val1)
-    p2Dbm = P0_base - (10 * currentMaterial.value.alpha * val2)
+    p1Dbm = P0_base - selectedFreq.value.factor_f - (10 * currentMaterial.value.alpha * val1)
+    p2Dbm = P0_base - selectedFreq.value.factor_f - (10 * currentMaterial.value.alpha * val2)
   }
   
   const y1 = chartScale.value === 'dbm' ? mapY(p1Dbm) : mapY(Math.pow(10, p1Dbm / 10))
@@ -419,6 +435,16 @@ const xGridLines = computed(() => {
         <!-- CONTROLES -->
         <div class="lg:col-span-5 space-y-6">
           <div class="bg-slate-900/40 border border-slate-900 rounded-3xl p-6 backdrop-blur-xl">
+            <!-- Selección de Frecuencia Global -->
+            <div class="mb-5">
+              <label class="block text-sm text-slate-300 mb-2 font-semibold">Frecuencia de Operación:</label>
+              <select v-model="selectedFreq" class="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white">
+                <option v-for="freq in FREQUENCIES" :key="freq.name" :value="freq">
+                  {{ freq.name }} (factor_f = {{ freq.factor_f }} dB)
+                </option>
+              </select>
+            </div>
+
             <div class="flex bg-slate-950 p-1 rounded-xl mb-6">
               <button @click="activeTab = 'distancia'" class="flex-1 py-2 text-sm font-semibold rounded-lg"
                 :class="activeTab === 'distancia' ? 'bg-slate-800 text-white' : 'text-slate-400'">Distancia</button>
@@ -465,31 +491,31 @@ const xGridLines = computed(() => {
             <h3 class="text-xs uppercase tracking-widest text-slate-400 mb-4">Cálculo Matemático Reactivo</h3>
             <div class="bg-slate-950 p-4 rounded-xl font-mono text-sm border border-slate-800 shadow-inner">
               <template v-if="activeTab === 'distancia'">
-                <div class="text-slate-400 mb-2">Pr(d) = Pr(d0) - 10 &middot; n &middot; log10(d / d0)</div>
-                <div class="text-sky-300 mb-2">Pr({{ distance }}) = {{ P0_base }} - 10 &middot; {{ selectedEnvN }} &middot; log10({{ distance }} / 1)</div>
-                <div class="text-emerald-400 font-bold border-t border-slate-800/50 pt-2">Pr({{ distance }}) = {{ rxPowerDistance.toFixed(2) }} dBm</div>
+                <div class="text-slate-400 mb-1">Pr = P<sub>0</sub> - factor<sub>f</sub> - 10 &middot; n &middot; log<sub>10</sub>(d / d<sub>0</sub>)</div>
+                <div class="text-sky-300 mb-2 pl-2 border-l border-slate-800 text-[11px] leading-relaxed">
+                  P<sub>0</sub> = {{ P0_base }} dBm<br>
+                  factor<sub>f</sub> = {{ selectedFreq.factor_f }} dB (Frecuencia: {{ selectedFreq.name }})<br>
+                  Decaimiento = 10 &middot; {{ selectedEnvN }} &middot; log<sub>10</sub>({{ distance }} / 1) = {{ (10 * selectedEnvN * Math.log10(distance / 1)).toFixed(2) }} dB
+                </div>
+                <div class="text-sky-300 mb-2 pl-2 border-l border-slate-800 text-[11px]">
+                  Pr({{ distance }}) = {{ P0_base }} - {{ selectedFreq.factor_f }} - {{ (10 * selectedEnvN * Math.log10(distance / 1)).toFixed(2) }}
+                </div>
+                <div class="text-emerald-400 font-bold border-t border-slate-800/50 pt-2 text-xs">
+                  Pr({{ distance }}) = {{ rxPowerDistance.toFixed(2) }} dBm
+                </div>
               </template>
               <template v-else>
-                <!-- Paso 1: Potencia Lineal Base -->
-                <div class="text-[11px] text-slate-500 mb-1 font-semibold uppercase tracking-wider">1. Linealización de Potencia Base (dBm a mW):</div>
-                <div class="text-sky-300 mb-2 text-xs pl-2 border-l border-slate-800">
-                  P<sub>0,mW</sub> = 10<sup>P<sub>0</sub>/10</sup> = 10<sup>-40/10</sup> = 0.0001 mW
+                <div class="text-slate-400 mb-1">Pr = P<sub>0</sub> - factor<sub>f</sub> - 10 &middot; &alpha; &middot; x</div>
+                <div class="text-sky-300 mb-2 pl-2 border-l border-slate-800 text-[11px] leading-relaxed">
+                  P<sub>0</sub> = {{ P0_base }} dBm<br>
+                  factor<sub>f</sub> = {{ selectedFreq.factor_f }} dB (Frecuencia: {{ selectedFreq.name }})<br>
+                  Atenuación Muros = 10 &middot; {{ currentMaterial.alpha }} &middot; {{ wallsCount }} = {{ (10 * currentMaterial.alpha * wallsCount).toFixed(2) }} dB
                 </div>
-                <!-- Paso 2: Pérdida por Obstáculos (Base 10) -->
-                <div class="text-[11px] text-slate-500 mb-1 font-semibold uppercase tracking-wider">2. Decaimiento Exponencial en Escala Lineal (Base 10):</div>
-                <div class="text-sky-300 mb-2 text-xs pl-2 border-l border-slate-800">
-                  P<sub>mW</sub>({{ wallsCount }}) = P<sub>0,mW</sub> &middot; 10<sup>-&alpha; &middot; x</sup><br>
-                  P<sub>mW</sub>({{ wallsCount }}) = 0.0001 &middot; 10<sup>-{{ currentMaterial.alpha }} &middot; {{ wallsCount }}</sup> = {{ rxPowerObstaclesMw.toFixed(8) }} mW
+                <div class="text-sky-300 mb-2 pl-2 border-l border-slate-800 text-[11px]">
+                  Pr({{ wallsCount }}) = {{ P0_base }} - {{ selectedFreq.factor_f }} - {{ (10 * currentMaterial.alpha * wallsCount).toFixed(2) }}
                 </div>
-                <!-- Paso 3: Conversión a dBm -->
-                <div class="text-[11px] text-slate-500 mb-1 font-semibold uppercase tracking-wider">3. Conversión Logarítmica (mW a dBm):</div>
-                <div class="text-sky-300 mb-2 text-xs pl-2 border-l border-slate-800">
-                  P<sub>dBm</sub>({{ wallsCount }}) = 10 &middot; log<sub>10</sub>(P<sub>mW</sub>({{ wallsCount }}))<br>
-                  P<sub>dBm</sub>({{ wallsCount }}) = 10 &middot; log<sub>10</sub>({{ rxPowerObstaclesMw.toFixed(8) }})
-                </div>
-                <!-- Resultado Final -->
                 <div class="text-emerald-400 font-bold border-t border-slate-800/50 pt-2 text-xs">
-                  P<sub>dBm</sub>({{ wallsCount }}) = {{ rxPowerObstacles.toFixed(2) }} dBm
+                  Pr({{ wallsCount }}) = {{ rxPowerObstacles.toFixed(2) }} dBm
                 </div>
               </template>
             </div>
